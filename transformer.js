@@ -25,3 +25,12 @@ function generateHexName () {
         return name
     }
 }
+
+function encodeString(str, key) {
+  const b64 = Buffer.from(str, 'utf8').toString('base64');
+  let out = '';
+  for (let i = 0; i < b64.length; i++) {
+    out += String.fromCharCode(b64.charCodeAt(i) ^ key);
+  }
+  return Buffer.from(out, 'binary').toString('base64');
+}
