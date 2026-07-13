@@ -33,4 +33,19 @@ function encodeString(str, key) {
     out += String.fromCharCode(b64.charCodeAt(i) ^ key);
   }
   return Buffer.from(out, 'binary').toString('base64');
+
+function injectDeadCode(ast) {
+  const decoySources = [
+    `if (Math.random() > 2) { (function(){ let _0xd = [1,2,3].map(x => x * 2); return _0xd.join(''); })(); }`,
+    `if (typeof undefined !== 'undefined') { let _0xd = Date.now() - Date.now(); }`,
+    `if (0x1 === 0x2) { (function(){ return Math.sqrt(-1); })(); }`
+  ];
+
+  const injections = 1 + Math.floor(Math.random() * 2); // 1-2 decoys
+  for (let i = 0; i < injections; i++) {
+    const src = decoySources[Math.floor(Math.random() * decoySources.length)];
+    const decoy = parser.parse(src).program.body[0];
+    const insertAt = Math.floor(Math.random() * (ast.program.body.length + 1));
+    ast.program.body.splice(insertAt, 0, decoy);
+  }
 }
