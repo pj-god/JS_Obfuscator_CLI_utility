@@ -46,9 +46,19 @@ function injectDeadCode(ast) {
   for (let i = 0; i < injections; i++) {
     const src = decoySources[Math.floor(Math.random() * decoySources.length)];
     const decoy = parser.parse(src).program.body[0];
-    const insertAt = Math.floor(Math.random() * (ast.program.body.length + 1));
+    const prologueEnd = getDirectivePrologueEnd(ast.program.body);
+    const insertAt = prologueEnd + Math.floor(Math.random() * (ast.program.body.length - prologueEnd + 1));
     ast.program.body.splice(insertAt, 0, decoy);
   }
+}
+
+function getDirectivePrologueEnd(programBody) {
+  let i = 0;
+  while (i < programBody.length && programBody[i].type === 'ExpressionStatement' &&
+         programBody[i].expression.type === 'StringLiteral') {
+    i++;
+  }
+  return i;
 }
 
 export function obfuscateCode(sourceCode) {
@@ -180,7 +190,8 @@ const _0xDecode = (s) => {
 const _0xStringPool = [${encodedPool.map(s => JSON.stringify(s)).join(',')}].map(_0xDecode);
 `;
     const poolBody = parser.parse(poolSrc).program.body;
-    ast.program.body.unshift(...poolBody);
+    const prologueEnd = getDirectivePrologueEnd(ast.program.body);
+    ast.program.body.splice(prologueEnd, 0, ...poolBody);
   }
 
   try {
