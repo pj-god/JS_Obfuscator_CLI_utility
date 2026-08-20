@@ -9,7 +9,10 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
+  "bin": {
+    "obfuscate": "./index.js"
+  },
   "dependencies": {
     "@babel/core": "^8.0.1",
     "@babel/generator": "^8.0.0",
