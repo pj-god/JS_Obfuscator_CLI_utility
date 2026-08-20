@@ -1,9 +1,9 @@
-import parser from '@babel/parser'
-import traverseModule from '@babel/traverse'
-import generator from '@babel/generator'
+import parser from '@babel/parser';
+import traverseModule from '@babel/traverse';
+import generator from '@babel/generator';
 
-const traverse = traverseModule.default
-const generate = generator.default
+const traverse = traverseModule.default;
+const generate = generator.default;
 
 const RESERVED_GLOBALS = new Set([
   'console', 'log', 'window', 'document', 'process', 'global', 'globalThis',
@@ -14,16 +14,15 @@ const RESERVED_GLOBALS = new Set([
   'Buffer', '_0xStringPool', '_0xDecode', '_0xK'
 ]);
 
-const usedHexNames = new Set()
+const usedHexNames = new Set();
 
-function generateHexName () {
-    let name;
-    do {
-        name = `_0x${Math.floor(Math.random() * 0xFFFFFF).toString(16)}`
-    } while(usedHexNames.has(name)) {
-        usedHexNames.add(name)
-        return name
-    }
+function generateHexName() {
+  let name;
+  do {
+    name = `_0x${Math.floor(Math.random() * 0xFFFFFF).toString(16)}`;
+  } while (usedHexNames.has(name));
+  usedHexNames.add(name);
+  return name;
 }
 
 function encodeString(str, key) {
@@ -35,6 +34,18 @@ function encodeString(str, key) {
   return Buffer.from(out, 'binary').toString('base64');
 }
 
+function getDirectivePrologueEnd(programBody) {
+  let i = 0;
+  while (
+    i < programBody.length &&
+    programBody[i].type === 'ExpressionStatement' &&
+    programBody[i].expression.type === 'StringLiteral'
+  ) {
+    i++;
+  }
+  return i;
+}
+
 function injectDeadCode(ast) {
   const decoySources = [
     `if (Math.random() > 2) { (function(){ let _0xd = [1,2,3].map(x => x * 2); return _0xd.join(''); })(); }`,
@@ -42,26 +53,32 @@ function injectDeadCode(ast) {
     `if (0x1 === 0x2) { (function(){ return Math.sqrt(-1); })(); }`
   ];
 
-  const injections = 1 + Math.floor(Math.random() * 2); 
+  const prologueEnd = getDirectivePrologueEnd(ast.program.body);
+  const injections = 1 + Math.floor(Math.random() * 2);
+
   for (let i = 0; i < injections; i++) {
     const src = decoySources[Math.floor(Math.random() * decoySources.length)];
     const decoy = parser.parse(src).program.body[0];
-    const prologueEnd = getDirectivePrologueEnd(ast.program.body);
-    const insertAt = prologueEnd + Math.floor(Math.random() * (ast.program.body.length - prologueEnd + 1));
+    const insertAt =
+      prologueEnd + Math.floor(Math.random() * (ast.program.body.length - prologueEnd + 1));
     ast.program.body.splice(insertAt, 0, decoy);
   }
 }
 
-function getDirectivePrologueEnd(programBody) {
-  let i = 0;
-  while (i < programBody.length && programBody[i].type === 'ExpressionStatement' &&
-         programBody[i].expression.type === 'StringLiteral') {
-    i++;
-  }
-  return i;
-}
+/**
+ * @param {string} sourceCode
+ * @param {object} [options]
+ * @param {boolean} [options.mangleIdentifiers=true]  - rename local variables/functions to hex names
+ * @param {boolean} [options.encodeStrings=true]       - base64+XOR encode pooled strings (vs plaintext pool)
+ * @param {boolean} [options.injectDeadCode=true]      - splice in unreachable decoy branches
+ */
+export function obfuscateCode(sourceCode, options = {}) {
+  const {
+    mangleIdentifiers = true,
+    encodeStrings = true,
+    injectDeadCode: shouldInjectDeadCode = true
+  } = options;
 
-export function obfuscateCode(sourceCode) {
   let ast;
   try {
     ast = parser.parse(sourceCode, {
@@ -129,8 +146,9 @@ export function obfuscateCode(sourceCode) {
 
   traverse(ast, {
     Identifier(path) {
-      const name = path.node.name;
+      if (!mangleIdentifiers) return; 
 
+      const name = path.node.name;
       if (RESERVED_GLOBALS.has(name)) return;
 
       if (
@@ -173,13 +191,18 @@ export function obfuscateCode(sourceCode) {
     }
   });
 
-  injectDeadCode(ast);
+  if (shouldInjectDeadCode) {
+    injectDeadCode(ast);
+  }
 
   if (stringPool.length > 0) {
-    const xorKey = 1 + Math.floor(Math.random() * 200);
-    const encodedPool = stringPool.map(s => encodeString(s, xorKey));
+    const prologueEnd = getDirectivePrologueEnd(ast.program.body);
 
-    const poolSrc = `
+    if (encodeStrings) {
+      const xorKey = 1 + Math.floor(Math.random() * 200);
+      const encodedPool = stringPool.map(s => encodeString(s, xorKey));
+
+      const poolSrc = `
 const _0xK = ${xorKey};
 const _0xDecode = (s) => {
   let b = Buffer.from(s, 'base64').toString('binary');
@@ -189,9 +212,13 @@ const _0xDecode = (s) => {
 };
 const _0xStringPool = [${encodedPool.map(s => JSON.stringify(s)).join(',')}].map(_0xDecode);
 `;
-    const poolBody = parser.parse(poolSrc).program.body;
-    const prologueEnd = getDirectivePrologueEnd(ast.program.body);
-    ast.program.body.splice(prologueEnd, 0, ...poolBody);
+      const poolBody = parser.parse(poolSrc).program.body;
+      ast.program.body.splice(prologueEnd, 0, ...poolBody);
+    } else {
+      const poolSrc = `const _0xStringPool = [${stringPool.map(s => JSON.stringify(s)).join(',')}];`;
+      const poolBody = parser.parse(poolSrc).program.body;
+      ast.program.body.splice(prologueEnd, 0, ...poolBody);
+    }
   }
 
   try {
